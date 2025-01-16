@@ -2,31 +2,33 @@ pipeline {
     agent any
     
     environment {
-        // Define AWS CLI environment variables
-        AWS_REGION = 'us-west-2'  // Specify the AWS region
+        AWS_REGION = 'us-west-2'  // Set your AWS region here
+        AWS_CREDENTIALS = 'aws-credentials'  // Name of the Jenkins AWS credentials stored
     }
 
     stages {
         stage('Delete EC2 Instances') {
             steps {
                 script {
-                    // Set AWS CLI credentials (Ensure IAM Role has sufficient permissions to terminate EC2 instances)
-                    withAWS(region: AWS_REGION, credentials: 'aws-credentials') {
-                        // Get a list of EC2 instances
+                    // Use the withAWS block to authenticate using the credentials from Jenkins
+                    withAWS(credentials: AWS_CREDENTIALS, region: AWS_REGION) {
+                        // Run AWS CLI command to describe all EC2 instances
                         def instances = sh(script: "aws ec2 describe-instances --query 'Reservations[].Instances[].[InstanceId,LaunchTime]' --output json", returnStdout: true).trim()
 
-                        // Parse the JSON response and filter instances older than 30 days
+                        // Parse the JSON response to process each instance
                         def instancesJson = readJSON text: instances
                         def currentTime = new Date().time / 1000  // Current time in seconds
                         def thirtyDaysInSeconds = 30 * 24 * 60 * 60  // 30 days in seconds
-                        
+
                         def instancesToTerminate = []
 
+                        // Loop through all instances and check their launch time
                         instancesJson.each { reservation ->
                             reservation.each { instance ->
                                 def launchTime = new Date(instance[1]).time / 1000  // Convert LaunchTime to seconds
                                 def instanceAge = currentTime - launchTime
                                 
+                                // If instance is older than 30 days, mark it for termination
                                 if (instanceAge > thirtyDaysInSeconds) {
                                     instancesToTerminate.add(instance[0])  // Add InstanceId to list if older than 30 days
                                 }
