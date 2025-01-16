@@ -1,37 +1,48 @@
 pipeline {
     agent any
-
-    parameters {
-        string(name: 'AWS_REGION', defaultValue: 'us-east-1', description: 'AWS Region to list S3 buckets')
+    
+    environment {
+        // Define AWS CLI environment variables
+        AWS_REGION = 'us-west-2'  // Specify the AWS region
     }
 
     stages {
-        stage('List S3 Buckets') {
+        stage('Delete EC2 Instances') {
             steps {
                 script {
-                    echo "Listing S3 buckets in region: ${params.AWS_REGION}"
-                    
-                    // Command to list S3 buckets
-                    def s3Buckets = sh(script: "aws s3api list-buckets --region ${params.AWS_REGION} --query 'Buckets[].Name' --output text", returnStdout: true).trim()
+                    // Set AWS CLI credentials (Ensure IAM Role has sufficient permissions to terminate EC2 instances)
+                    withAWS(region: AWS_REGION, credentials: 'aws-credentials') {
+                        // Get a list of EC2 instances
+                        def instances = sh(script: "aws ec2 describe-instances --query 'Reservations[].Instances[].[InstanceId,LaunchTime]' --output json", returnStdout: true).trim()
 
-                    // Output the S3 bucket list
-                    if (s3Buckets) {
-                        echo "S3 Buckets in region ${params.AWS_REGION}:"
-                        echo s3Buckets
-                    } else {
-                        echo "No S3 buckets found in region ${params.AWS_REGION}."
+                        // Parse the JSON response and filter instances older than 30 days
+                        def instancesJson = readJSON text: instances
+                        def currentTime = new Date().time / 1000  // Current time in seconds
+                        def thirtyDaysInSeconds = 30 * 24 * 60 * 60  // 30 days in seconds
+                        
+                        def instancesToTerminate = []
+
+                        instancesJson.each { reservation ->
+                            reservation.each { instance ->
+                                def launchTime = new Date(instance[1]).time / 1000  // Convert LaunchTime to seconds
+                                def instanceAge = currentTime - launchTime
+                                
+                                if (instanceAge > thirtyDaysInSeconds) {
+                                    instancesToTerminate.add(instance[0])  // Add InstanceId to list if older than 30 days
+                                }
+                            }
+                        }
+
+                        // If there are instances to terminate, terminate them
+                        if (instancesToTerminate.size() > 0) {
+                            echo "Terminating instances: ${instancesToTerminate.join(', ')}"
+                            sh "aws ec2 terminate-instances --instance-ids ${instancesToTerminate.join(' ')}"
+                        } else {
+                            echo "No EC2 instances older than 30 days."
+                        }
                     }
                 }
             }
-        }
-    }
-
-    post {
-        failure {
-            echo 'The pipeline failed!'
-        }
-        success {
-            echo 'S3 bucket listing completed successfully.'
         }
     }
 }
