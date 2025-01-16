@@ -1,1 +1,37 @@
-hi 
+pipeline {
+    agent any
+
+    parameters {
+        string(name: 'AWS_REGION', defaultValue: 'us-east-1', description: 'AWS Region to list S3 buckets')
+    }
+
+    stages {
+        stage('List S3 Buckets') {
+            steps {
+                script {
+                    echo "Listing S3 buckets in region: ${params.AWS_REGION}"
+                    
+                    // Command to list S3 buckets
+                    def s3Buckets = sh(script: "aws s3api list-buckets --region ${params.AWS_REGION} --query 'Buckets[].Name' --output text", returnStdout: true).trim()
+
+                    // Output the S3 bucket list
+                    if (s3Buckets) {
+                        echo "S3 Buckets in region ${params.AWS_REGION}:"
+                        echo s3Buckets
+                    } else {
+                        echo "No S3 buckets found in region ${params.AWS_REGION}."
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        failure {
+            echo 'The pipeline failed!'
+        }
+        success {
+            echo 'S3 bucket listing completed successfully.'
+        }
+    }
+}
