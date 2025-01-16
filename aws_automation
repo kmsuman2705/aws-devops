@@ -41,8 +41,18 @@ pipeline {
                                 
                                 // Delete the instances that are older than 2 minutes
                                 instancesToDelete.each { instanceId ->
-                                    echo "Terminating EC2 instance: ${instanceId}"
-                                    sh "aws ec2 terminate-instances --instance-ids ${instanceId} --region ${params.AWS_REGION}"
+                                    try {
+                                        echo "Attempting to terminate EC2 instance: ${instanceId}"
+                                        
+                                        // Attempt to terminate the instance and check for errors
+                                        def result = sh(script: "aws ec2 terminate-instances --instance-ids ${instanceId} --region ${params.AWS_REGION}", returnStatus: true)
+                                        if (result != 0) {
+                                            error "Failed to terminate EC2 instance: ${instanceId}. Instance may not exist or an error occurred."
+                                        }
+                                        echo "Successfully initiated termination of EC2 instance: ${instanceId}"
+                                    } catch (Exception e) {
+                                        echo "Error terminating EC2 instance ${instanceId}: ${e.getMessage()}"
+                                    }
                                 }
                             } else {
                                 echo "No EC2 instances older than 2 minutes found."
