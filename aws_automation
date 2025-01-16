@@ -11,10 +11,8 @@ pipeline {
             steps {
                 script {
                     try {
-                        // Define the threshold date (2 minutes ago)
-                        def dateThreshold = new Date() - (2 / 1440)  // 2 minutes = 2 / 1440 days
-                        def thresholdDate = dateThreshold.format("yyyy-MM-dd'T'HH:mm:ss'Z'", TimeZone.getTimeZone("UTC"))
-
+                        // Get the date and time from 2 minutes ago using Linux date command
+                        def dateThreshold = sh(script: "date --date='2 minutes ago' --utc +'%Y-%m-%dT%H:%M:%SZ'", returnStdout: true).trim()
                         echo "Looking for EC2 instances older than 2 minutes in AWS Account ID: ${params.AWS_ACCOUNT_ID} and Region: ${params.AWS_REGION}"
 
                         // List EC2 instances and filter by launch time
@@ -30,9 +28,9 @@ pipeline {
                             def lines = ec2Instances.split("\n")
                             lines.each { line ->
                                 def (instanceId, launchTime) = line.split("\t")
-                                def launchDate = Date.parse("yyyy-MM-dd'T'HH:mm:ss'Z'", launchTime)
+                                def launchDate = launchTime.trim()
 
-                                if (launchDate.before(dateThreshold)) {
+                                if (launchDate < dateThreshold) {
                                     instancesToDelete.add(instanceId)
                                 }
                             }
