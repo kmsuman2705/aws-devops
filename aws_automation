@@ -11,9 +11,9 @@ pipeline {
             steps {
                 script {
                     try {
-                        // Get the date and time from 2 minutes ago using Linux date command
+                        // Get the date and time from 2 minutes ago using the current UTC time
                         def dateThreshold = sh(script: "date --date='2 minutes ago' --utc +'%Y-%m-%dT%H:%M:%SZ'", returnStdout: true).trim()
-                        echo "Looking for EC2 instances older than 2 minutes in AWS Account ID: ${params.AWS_ACCOUNT_ID} and Region: ${params.AWS_REGION}"
+                        echo "Looking for EC2 instances launched before ${dateThreshold} in AWS Account ID: ${params.AWS_ACCOUNT_ID} and Region: ${params.AWS_REGION}"
 
                         // List EC2 instances and filter by launch time
                         def ec2Instances = sh(script: """
@@ -30,6 +30,7 @@ pipeline {
                                 def (instanceId, launchTime) = line.split("\t")
                                 def launchDate = launchTime.trim()
 
+                                // Compare the launch time of the EC2 instance with the dateThreshold
                                 if (launchDate < dateThreshold) {
                                     instancesToDelete.add(instanceId)
                                 }
@@ -40,8 +41,8 @@ pipeline {
                                 
                                 // Delete the instances that are older than 2 minutes
                                 instancesToDelete.each { instanceId ->
-                                    sh "aws ec2 terminate-instances --instance-ids ${instanceId} --region ${params.AWS_REGION}"
                                     echo "Terminating EC2 instance: ${instanceId}"
+                                    sh "aws ec2 terminate-instances --instance-ids ${instanceId} --region ${params.AWS_REGION}"
                                 }
                             } else {
                                 echo "No EC2 instances older than 2 minutes found."
