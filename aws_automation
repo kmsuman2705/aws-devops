@@ -1,50 +1,42 @@
 pipeline {
     agent any
-    
-    environment {
-        AWS_REGION = 'us-west-2'  // Set your AWS region here
-        AWS_CREDENTIALS = 'aws-credentials'  // Name of the Jenkins AWS credentials stored
+
+    parameters {
+        string(name: 'AWS_REGION', defaultValue: 'us-east-1', description: 'AWS Region to list S3 buckets')
     }
 
     stages {
-        stage('Delete EC2 Instances') {
+        stage('List S3 Buckets') {
             steps {
                 script {
-                    // Use the withAWS block to authenticate using the credentials from Jenkins
-                    withAWS(credentials: AWS_CREDENTIALS, region: AWS_REGION) {
-                        // Run AWS CLI command to describe all EC2 instances
-                        def instances = sh(script: "aws ec2 describe-instances --query 'Reservations[].Instances[].[InstanceId,LaunchTime]' --output json", returnStdout: true).trim()
+                    try {
+                        echo "Listing S3 buckets..."
+                        
+                        // List all S3 buckets (globally)
+                        def result = sh(script: "aws s3 ls", returnStdout: true).trim()
 
-                        // Parse the JSON response to process each instance
-                        def instancesJson = readJSON text: instances
-                        def currentTime = new Date().time / 1000  // Current time in seconds
-                        def thirtyDaysInSeconds = 30 * 24 * 60 * 60  // 30 days in seconds
-
-                        def instancesToTerminate = []
-
-                        // Loop through all instances and check their launch time
-                        instancesJson.each { reservation ->
-                            reservation.each { instance ->
-                                def launchTime = new Date(instance[1]).time / 1000  // Convert LaunchTime to seconds
-                                def instanceAge = currentTime - launchTime
-                                
-                                // If instance is older than 30 days, mark it for termination
-                                if (instanceAge > thirtyDaysInSeconds) {
-                                    instancesToTerminate.add(instance[0])  // Add InstanceId to list if older than 30 days
-                                }
-                            }
-                        }
-
-                        // If there are instances to terminate, terminate them
-                        if (instancesToTerminate.size() > 0) {
-                            echo "Terminating instances: ${instancesToTerminate.join(', ')}"
-                            sh "aws ec2 terminate-instances --instance-ids ${instancesToTerminate.join(' ')}"
+                        // Check if the result has content (i.e., S3 buckets)
+                        if (result) {
+                            echo "S3 Buckets in your account:"
+                            echo result
                         } else {
-                            echo "No EC2 instances older than 30 days."
+                            echo "No S3 buckets found."
                         }
+                    } catch (Exception e) {
+                        echo "Error listing S3 buckets: ${e.getMessage()}"
+                        currentBuild.result = 'FAILURE'
                     }
                 }
             }
+        }
+    }
+
+    post {
+        failure {
+            echo 'The pipeline failed!'
+        }
+        success {
+            echo 'S3 bucket listing completed successfully.'
         }
     }
 }
